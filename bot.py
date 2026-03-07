@@ -54,7 +54,7 @@ def message(payload):
 
     if BOT_ID != user_id:
         ts = event.get('ts')
-        client.reactions_add(channel_id=channel_id, name='loading', timestamp=ts)
+        client.reactions_add(channel=channel_id, name='loading', timestamp=ts)
         client.chat_postMessage(channel=channel_id, thread_ts=ts, text="making emoji... (not rn it is still in development)")
 
 if __name__ == "__main__":

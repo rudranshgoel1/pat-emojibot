@@ -16,6 +16,7 @@ app = Flask(__name__)
 slack_event_adapter = SlackEventAdapter(os.environ['SLACK_SIGNING_SECRET'],'/slack/events',app)
 
 client = slack.WebClient(token=os.environ["SLACK_TOKEN"])
+adminclient = slack.WebClient(token=os.environ["USER_SLACK_TOKEN"])
 
 BOT_ID = client.api_call("auth.test")['user_id']
 
@@ -76,7 +77,7 @@ def message(payload):
                 })
                 gif_url = r.json()["gif_url"]
 
-                client.admin_emoji_add(name=text, url=gif_url)
+                adminclient.admin_emoji_add(name=text, url=gif_url)
                 client.chat_postMessage(channel=channel_id, thread_ts=ts, text=f"emoji added :{text}:")
                 client.reactions_remove(channel=channel_id, name='loading', timestamp=ts)
                 client.reactions_add(channel=channel_id, name=text, timestamp=ts)

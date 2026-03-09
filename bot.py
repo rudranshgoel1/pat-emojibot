@@ -79,14 +79,32 @@ def message(payload):
                 })
                 gif_url = r.json()["gif_url"]
 
-                emojir = requests.get(f"https://{workspaceid}.slack.com/api/emoji.add", cookies={"d": usercookie}, params={
-                    "token": os.environ["USER_SLACK_TOKEN"],
-                    "name": text,
-                    "url": gif_url,
-                })
-                emojir_json = emojir.json()
+                gif = requests.get(gif_url)
 
+                files = {
+                    "image": ("emoji.gif", gif.content, "image/gif")
+                }
+                
+                data = {
+                    "token": os.environ["USER_SLACK_TOKEN"],
+                    "mode": "data",
+                    "name": text,
+                }
+
+                headers = {
+                    "Cookie": f"d={usercookie}"
+                }
+
+                emojir = requests.post(
+                    f"https://{workspaceid}.slack.com/api/emoji.add",
+                    headers=headers,
+                    data=data,
+                    files=files
+                )
+                
+                emojir_json = emojir.json()
                 print(emojir_json)
+                
                 # userclient.admin_emoji_add(name=text, url=gif_url)
                 client.chat_postMessage(channel=channel_id, thread_ts=ts, text=f"emoji added :{text}:")
                 client.reactions_remove(channel=channel_id, name='loading', timestamp=ts)

@@ -79,7 +79,7 @@ def message(payload):
                 })
                 gif_url = r.json()["gif_url"]
 
-                emojir = requests.get("https://${workspaceid}.slack.com/api/emoji.add", cookies={usercookie}, params={
+                emojir = requests.get(f"https://{workspaceid}.slack.com/api/emoji.add", cookies={"d": usercookie}, params={
                     "token": os.environ["SLACK_TOKEN"],
                     "name": text,
                     "url": gif_url,

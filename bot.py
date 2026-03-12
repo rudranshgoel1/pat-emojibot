@@ -7,6 +7,7 @@ from slackeventsapi import SlackEventAdapter
 import hashlib
 import hmac
 import time
+import re
 import requests
 
 env_path = Path('.') / '.env'
@@ -50,6 +51,21 @@ def slack_events():
 
     return jsonify({'status': 'ok'})
 
+def fix_emoji_name(name):
+    name = name.lower()
+    name = name.replace(' ', '-')
+    name = re.sub(r'[^a-z0-9_-]', '', name)
+    return name
+
+def get_user_pfp(user_id):
+    response = client.users_info(user=user_id)
+    profile = response['user']['profile']
+    
+    for size in ['image_512', 'image_192', 'image_72', 'image_48', 'image_32']:
+        if profile.get(size):
+            return profile[size]
+    return None        
+
 @slack_event_adapter.on('message')
 def message(payload):
     print(payload)
@@ -60,8 +76,72 @@ def message(payload):
     files = event.get('files', [])
 
     if BOT_ID != user_id:
-        if '##' in text:
-            return
+        ping_match = re.match(r'<@([A-Z0-9]+)>\s+(\S+)$', text.strip())
+        if ping_match and not files:
+            mentioned_user_id = ping_match.group(1)
+            emoji_name = fix_emoji_name(ping_match.group(2))
+            ts = event.get('ts')
+            
+            pfp_url = get_user_pfp(mentioned_user_id)
+            if not pfp_url:
+                client.chat_postMessage(channel=channel_id, thread_ts=ts, text="couldn't find their pfp :cryin:")
+                return
+            
+            r = requests.get("https://patpatgifmaker.vercel.app/api/petpet", params={
+                "image_url": pfp_url,
+                "slack_token": os.environ["SLACK_TOKEN"],
+            })
+            gif_url = r.json()["gif_url"]
+
+            gif = requests.get(gif_url)
+
+            files = {
+                "image": ("emoji.gif", gif.content, "image/gif")
+            }
+                
+            data = {
+                "token": os.environ["USER_SLACK_TOKEN"],
+                "name": emoji_name,
+                "mode": "url",
+                "url": gif_url,
+                "search_args": "{}",
+                "_x_reason": "add-custom-emoji-dialog-content",
+                "_x_mode": "online",
+                "_x_sonic": "true",
+                "_x_app_name": "client",
+            }
+
+            headers = {
+                "accept": "*/*",
+                "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
+                "priority": "u=1, i",
+                "sec-ch-ua": '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"macOS"',
+                "sec-fetch-dest": "empty",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-site": "same-site",
+            }
+                
+            cookies = {
+                "utm": "{}",
+                "b": os.environ["USER_COOKIE_B"],
+                "tz": "330",
+                "c": '{"banner_homepage_slackbot":1}',
+                "d-s": "1773046862",
+                "x": os.environ["USER_COOKIE_X"],
+                "d": os.environ["USER_COOKIE_D"],
+            }
+
+            emojir = requests.post(f"https://{workspaceid}.slack.com/api/emoji.add" + os.environ["URL_PARAMS"], headers=headers, cookies=cookies, data=data)
+            
+            emojir_json = emojir.json()
+            print(emojir_json)
+
+            client.chat_postMessage(channel=channel_id, thread_ts=ts, text=f"emoji added :{text}:")
+            client.reactions_remove(channel=channel_id, name='loading', timestamp=ts)
+            client.reactions_add(channel=channel_id, name=text, timestamp=ts)
+        
         elif files and text: 
             file = files[0]
 
@@ -86,7 +166,7 @@ def message(payload):
                 
                 data = {
                     "token": os.environ["USER_SLACK_TOKEN"],
-                    "name": text,
+                    "name": fix_emoji_name(text),
                     "mode": "url",
                     "url": gif_url,
                     "search_args": "{}",
@@ -122,8 +202,7 @@ def message(payload):
                 
                 emojir_json = emojir.json()
                 print(emojir_json)
-                
-                # userclient.admin_emoji_add(name=text, url=gif_url)
+
                 client.chat_postMessage(channel=channel_id, thread_ts=ts, text=f"emoji added :{text}:")
                 client.reactions_remove(channel=channel_id, name='loading', timestamp=ts)
                 client.reactions_add(channel=channel_id, name=text, timestamp=ts)

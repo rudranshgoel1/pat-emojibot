@@ -4,3 +4,4 @@ slackeventsapi
 gunicorn
 dotenv
 requests
+psycopg2-binary

@@ -212,6 +212,7 @@ def message(payload):
                         "elements": [
                             {
                                 "type": "button",
+                                "style": "primary",
                                 "text": {"type": "plain_text", "text": "thanks petpheus 🐾"},
                                 "action_id": "thank_petpheus",
                                 "value": user_id
@@ -310,6 +311,7 @@ def message(payload):
                         "elements": [
                             {
                                 "type": "button",
+                                "style": "primary",
                                 "text": {"type": "plain_text", "text": "thanks petpheus 🐾"},
                                 "action_id": "thank_petpheus",
                                 "value": user_id
@@ -404,6 +406,7 @@ def message(payload):
                             "elements": [
                                 {
                                     "type": "button",
+                                    "style": "primary",
                                     "text": {"type": "plain_text", "text": "thanks petpheus 🐾"},
                                     "action_id": "thank_petpheus",
                                     "value": user_id

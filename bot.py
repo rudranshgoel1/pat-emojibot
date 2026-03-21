@@ -100,7 +100,7 @@ def interactions():
             with get_db() as conn:
                 with conn.cursor(cursor_factory=RealDictCursor) as cur:
                     cur.execute("SELECT created_by FROM emojis WHERE name = %s", (emoji_name,))
-                    row.cur.fetchone()
+                    row = cur.fetchone()
                     
             if not row or row['created_by'] != deleter_user_id:
                 return jsonify({'status': 'unauthorized'})

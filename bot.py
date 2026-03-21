@@ -9,6 +9,8 @@ import hmac
 import time
 import re
 import requests
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 env_path = Path('.') / '.env'
 load_dotenv(dotenv_path=env_path)
@@ -22,6 +24,28 @@ workspaceid = os.environ["WORKSPACE_ID"]
 version = os.environ["VERSION"]
 
 BOT_ID = client.api_call("auth.test")['user_id']
+
+def get_db():
+    return psycopg2.connect(os.environ["DATABASE_URL"])
+
+def init_db():
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                            CREATE TABLE IF NOT EXISTS emojis (
+                                name TEXT PRIMARY KEY,
+                                created_by TEXT NOT NULL,
+                                created_at TIMESTAMP DEFAULT NOW()
+                            )
+                        """)
+            
+init_db()
+
+def save_emoji(name, user_id):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO emojis (name, created_by) VALUES (%s, %s) ON CONFLICT (name) DO NOTHING", (name, user_id))
+        conn.commit()
 
 def verify_slack_signature(req):
     slack_signing_secret = os.environ['SLACK_SIGNING_SECRET'].encode()
@@ -68,7 +92,65 @@ def interactions():
             thread_ts = payload['container']['message_ts']
             
             client.chat_postMessage(channel=channel_id, thread_ts=thread_ts, text=f"petpheus pets <@{user}> :yayayayayay:")
-    
+        
+        elif action['action_id'] == 'delete_emoji':
+            emoji_name = action['value']
+            deleter_user_id = payload['user']['id']
+            
+            with get_db() as conn:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    cur.execute("SELECT created_by FROM emojis WHERE name = %s", (emoji_name,))
+                    row.cur.fetchone()
+                    
+            if not row or row['created_by'] != deleter_user_id:
+                return jsonify({'status': 'unauthorized'})
+            
+            data = {
+            "token": os.environ["USER_SLACK_TOKEN"],
+            "name": emoji_name,
+            "search_args": "{}",
+            "_x_reason": "add-custom-emoji-dialog-content",
+            "_x_mode": "online",
+            "_x_sonic": "true",
+            "_x_app_name": "client",
+            }
+
+            headers = {
+                "accept": "*/*",
+                "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
+                "priority": "u=1, i",
+                "sec-ch-ua": '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"macOS"',
+                "sec-fetch-dest": "empty",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-site": "same-site",
+            }
+
+            cookies = {
+                "utm": "{}",
+                "b": os.environ["USER_COOKIE_B"],
+                "tz": "330",
+                "c": '{"banner_homepage_slackbot":1}',
+                "d-s": "1773046862",
+                "x": os.environ["USER_COOKIE_X"],
+                "d": os.environ["USER_COOKIE_D"],
+            }
+            
+            requests.post(
+                f"https://{workspaceid}.slack.com/api/emoji.remove" + os.environ["URL_PARAMS"],
+                headers=headers,
+                cookies=cookies,
+                data=data
+            )
+            
+            with get_db() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM emojis WHERE name = %s", (emoji_name,))
+                conn.commit()
+                
+            app_home_opened({"event": {"user": deleter_user_id}})
+                
     return jsonify({'status': 'ok'})
 
 def fix_emoji_name(name):
@@ -429,6 +511,63 @@ def message(payload):
 
         else:
             return
+        
+@slack_event_adapter.on('app_home_opened')
+def app_home_opened(payload):
+    event = payload.get('event', {})
+    user_id = event.get('user')
+    
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT name FROM emojis WHERE created_by = %s ORDER BY created_at DESC", (user_id,))
+            emojis = cur.fetchall()
+            
+    if not emojis:
+        blocks = [
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": "you haven't made any emojis yet!, send a message in `#petpheus` to get started!"}
+            }
+        ]
+    else:
+        blocks = [
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": "your emojis 🐾"}
+            },
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"you have made *{len(emojis)}* emoji{'s' if len(emojis) != 1 else ''}!"}
+            },
+            {
+                "type": "divider"
+            }
+        ]
+        
+        for emoji in emojis:
+            name = emoji['name']
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f":{name}: `:{name}:`"},
+                "accessory": {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "🗑️ delete"},
+                    "style": "danger",
+                    "action_id": "delete_emoji",
+                    "value": name,
+                    "confirm": {
+                        "title": {"type": "plain_text", "text": "are you sure?"},
+                        "text": {"type": "mrkdwn", "text": f"this will permanently delete :{name}: from the workspace"},
+                        "confirm": {"type": "plain_text", "text": "delete it"},
+                        "deny": {"type": "plain_text", "text": "keep it"}
+                    }
+                }
+            })
+    
+    client.views_publish(
+        user_id=user_id,
+        view={"type": "home", "blocks": blocks}
+    )      
 
 if __name__ == "__main__":
     app.run(debug=True)
